@@ -235,7 +235,7 @@ function buildPaint(fill: any): Paint | null {
   }
   if (fill.type === 'mesh_gradient') {
     // Mesh gradients have no Figma equivalent — approximate with first color
-    const firstColor = fill.colors?.[0]
+    const firstColor = fill.colors && fill.colors[0]
     if (firstColor) {
       const c = isVar(firstColor) ? resolve(firstColor) : firstColor
       if (typeof c === 'string') return buildSolidPaint(c, 0.5)
@@ -333,14 +333,18 @@ function applyEffects(node: BlendMixin, effects: any) {
     } else if (e.type === 'shadow') {
       const cStr = e.color ? (isVar(e.color) ? resolve(e.color) : e.color) : '#00000040'
       const { r, g, b, a } = parseHex(typeof cStr === 'string' ? cStr : '#00000040')
+      const shadowType = (e.shadowType === 'inner' ? 'INNER_SHADOW' : 'DROP_SHADOW') as 'DROP_SHADOW' | 'INNER_SHADOW'
+      const ox = e.offset ? (resolveNum(e.offset.x) || 0) : 0
+      const oy = e.offset ? (resolveNum(e.offset.y) || 0) : 0
       out.push({
-        type: e.shadowType === 'inner' ? 'INNER_SHADOW' : 'DROP_SHADOW',
+        type: shadowType,
         color: { r, g, b, a },
-        offset: { x: resolveNum(e.offset?.x) ?? 0, y: resolveNum(e.offset?.y) ?? 0 },
-        radius: resolveNum(e.blur) ?? 4,
-        spread: resolveNum(e.spread) ?? 0,
+        offset: { x: ox, y: oy },
+        radius: resolveNum(e.blur) || 4,
+        spread: resolveNum(e.spread) || 0,
         visible: e.enabled !== false,
-      })
+        blendMode: 'NORMAL',
+      } as DropShadowEffect)
     }
   }
 
@@ -411,54 +415,56 @@ function applyLayout(node: FrameNode | ComponentNode, pen: any) {
 
 // Apply width/height sizing AFTER parent context is known
 function applySizing(node: SceneNode, pen: any, parentLayout: boolean) {
-  if (pen.width !== undefined) {
-    const s = parseSizing(pen.width)
-    if ('layoutSizingHorizontal' in node) {
-      const fn = node as FrameNode
-      if (s.mode === 'FILL' && parentLayout) fn.layoutSizingHorizontal = 'FILL'
-      else if (s.mode === 'HUG') fn.layoutSizingHorizontal = 'HUG'
-      else if (s.mode === 'FIXED' && s.fallback) {
-        fn.layoutSizingHorizontal = 'FIXED'
-        fn.resize(s.fallback, fn.height)
-      }
-    } else if (s.mode === 'FIXED' && s.fallback && 'resize' in node) {
-      (node as any).resize(s.fallback, (node as any).height)
-    }
-  }
-
-  if (pen.height !== undefined) {
-    const s = parseSizing(pen.height)
-    if ('layoutSizingVertical' in node) {
-      const fn = node as FrameNode
-      if (s.mode === 'FILL' && parentLayout) fn.layoutSizingVertical = 'FILL'
-      else if (s.mode === 'HUG') fn.layoutSizingVertical = 'HUG'
-      else if (s.mode === 'FIXED' && s.fallback) {
-        fn.layoutSizingVertical = 'FIXED'
-        fn.resize(fn.width, s.fallback)
-      }
-    } else if (s.mode === 'FIXED' && s.fallback && 'resize' in node) {
-      (node as any).resize((node as any).width, s.fallback)
-    }
-  }
-
-  // For text nodes: sizing from textGrowth
-  if (node.type === 'TEXT') {
-    const tn = node as TextNode
-    if (pen.textGrowth === 'fixed-width' || pen.textGrowth === 'fixed-width-height') {
-      tn.textAutoResize = pen.textGrowth === 'fixed-width' ? 'HEIGHT' : 'NONE'
-      // Width should be set from pen.width
-      if (pen.width !== undefined) {
-        const ws = parseSizing(pen.width)
-        if (ws.mode === 'FILL' && parentLayout) {
-          (tn as any).layoutSizingHorizontal = 'FILL'
-        } else if (ws.mode === 'FIXED' && ws.fallback) {
-          tn.resize(ws.fallback, tn.height)
+  try {
+    if (pen.width !== undefined) {
+      const s = parseSizing(pen.width)
+      if ('layoutSizingHorizontal' in node) {
+        const fn = node as FrameNode
+        if (s.mode === 'FILL' && parentLayout) fn.layoutSizingHorizontal = 'FILL'
+        else if (s.mode === 'HUG') fn.layoutSizingHorizontal = 'HUG'
+        else if (s.mode === 'FIXED' && s.fallback) {
+          fn.layoutSizingHorizontal = 'FIXED'
+          fn.resize(s.fallback, fn.height)
         }
+      } else if (s.mode === 'FIXED' && s.fallback && 'resize' in node) {
+        (node as any).resize(s.fallback, (node as any).height)
       }
-    } else {
-      // auto: width and height from content
-      tn.textAutoResize = 'WIDTH_AND_HEIGHT'
     }
+
+    if (pen.height !== undefined) {
+      const s = parseSizing(pen.height)
+      if ('layoutSizingVertical' in node) {
+        const fn = node as FrameNode
+        if (s.mode === 'FILL' && parentLayout) fn.layoutSizingVertical = 'FILL'
+        else if (s.mode === 'HUG') fn.layoutSizingVertical = 'HUG'
+        else if (s.mode === 'FIXED' && s.fallback) {
+          fn.layoutSizingVertical = 'FIXED'
+          fn.resize(fn.width, s.fallback)
+        }
+      } else if (s.mode === 'FIXED' && s.fallback && 'resize' in node) {
+        (node as any).resize((node as any).width, s.fallback)
+      }
+    }
+
+    // For text nodes: sizing from textGrowth
+    if (node.type === 'TEXT') {
+      const tn = node as TextNode
+      if (pen.textGrowth === 'fixed-width' || pen.textGrowth === 'fixed-width-height') {
+        tn.textAutoResize = pen.textGrowth === 'fixed-width' ? 'HEIGHT' : 'NONE'
+        if (pen.width !== undefined) {
+          const ws = parseSizing(pen.width)
+          if (ws.mode === 'FILL' && parentLayout) {
+            (tn as any).layoutSizingHorizontal = 'FILL'
+          } else if (ws.mode === 'FIXED' && ws.fallback) {
+            tn.resize(ws.fallback, tn.height)
+          }
+        }
+      } else {
+        tn.textAutoResize = 'WIDTH_AND_HEIGHT'
+      }
+    }
+  } catch (_e) {
+    sendLog(`Sizing error on ${pen.name || pen.id || pen.type}: ${(_e as any).message}`, 'warn')
   }
 }
 
@@ -505,8 +511,11 @@ function applyCommon(node: SceneNode, pen: any) {
   }
 
   // Layout position (absolute within auto-layout parent)
+  // Only safe when parent has auto-layout — wrapped in try/catch
   if (pen.layoutPosition === 'absolute' && 'layoutPositioning' in node) {
-    (node as any).layoutPositioning = 'ABSOLUTE'
+    try {
+      (node as any).layoutPositioning = 'ABSOLUTE'
+    } catch (_e2) { /* parent has no layoutMode */ }
   }
 }
 
@@ -975,7 +984,11 @@ async function buildNode(pen: any, parent: BaseNode & ChildrenMixin, parentLayou
       const childLayout = hasLayout(pen)
       if (pen.children && Array.isArray(pen.children)) {
         for (const child of pen.children) {
-          await buildNode(child, frame, childLayout)
+          try {
+            await buildNode(child, frame, childLayout)
+          } catch (_e3) {
+            sendLog(`Error building child ${child.name || child.id || child.type}: ${(_e3 as any).message}`, 'warn')
+          }
         }
       }
 
@@ -1085,7 +1098,11 @@ async function importDocument(data: any) {
     const pen = components[i]
     // Override position to place components neatly
     const orig = { ...pen, x: compX, y: i * 200 }
-    await buildNode(orig, figma.currentPage, false)
+    try {
+      await buildNode(orig, figma.currentPage, false)
+    } catch (_e4) {
+      sendLog(`Component error: ${pen.name || pen.id}: ${(_e4 as any).message}`, 'warn')
+    }
     sendProgress(25 + (i / components.length) * 25, `Component ${i + 1}/${components.length}: ${pen.name || pen.id}`)
   }
   sendLog(`Created ${components.length} components`, 'ok')
@@ -1095,7 +1112,11 @@ async function importDocument(data: any) {
   // 4. Second pass: create page frames (non-reusable top-level nodes)
   for (let i = 0; i < nonComponents.length; i++) {
     const pen = nonComponents[i]
-    await buildNode(pen, figma.currentPage, false)
+    try {
+      await buildNode(pen, figma.currentPage, false)
+    } catch (_e5) {
+      sendLog(`Page error: ${pen.name || pen.id}: ${(_e5 as any).message}`, 'warn')
+    }
     sendProgress(50 + (i / nonComponents.length) * 45, `Page ${i + 1}/${nonComponents.length}: ${pen.name || pen.id}`)
   }
   sendLog(`Created ${nonComponents.length} page frames`, 'ok')

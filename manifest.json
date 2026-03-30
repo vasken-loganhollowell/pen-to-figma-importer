@@ -1,8 +1,9 @@
 {
   "name": "Pen to Figma Importer",
-  "id": "pen-to-figma-importer",
+  "id": "1620424308020292063",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "ui.html",
-  "editorType": ["figma"]
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page"
 }

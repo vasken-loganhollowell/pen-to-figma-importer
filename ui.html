@@ -57,6 +57,24 @@
   .stats.active { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
   .stats dt { color: #888; }
   .stats dd { color: #fff; text-align: right; }
+
+  .footer {
+    margin-top: auto; padding-top: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; border-top: 1px solid #333;
+  }
+  .footer a {
+    color: #888; text-decoration: none; transition: color 0.15s;
+  }
+  .footer a:hover { color: #0ACF83; }
+  .report-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: none; border: 1px solid #444; border-radius: 4px;
+    color: #888; padding: 4px 8px; font-size: 10px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .report-btn:hover { border-color: #f5a623; color: #f5a623; }
+  .warn-count { color: #f5a623; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -79,7 +97,14 @@
 <dl class="stats" id="stats"></dl>
 <div class="log" id="log"></div>
 
+<div class="footer">
+  <span>v1.0.0 &middot; <a href="https://github.com/vasken-loganhollowell/pen-to-figma-importer" target="_blank">GitHub</a></span>
+  <button class="report-btn" id="reportBtn" onclick="reportIssue()">Report a problem</button>
+</div>
+
 <script>
+let warnings = [];
+
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const progressEl = document.getElementById('progress');
@@ -131,6 +156,23 @@ function log(msg, cls) {
   line.textContent = msg;
   logEl.appendChild(line);
   logEl.scrollTop = logEl.scrollHeight;
+  if (cls === 'warn' || cls === 'err') {
+    warnings.push(msg);
+    document.getElementById('reportBtn').innerHTML = 'Report (' + warnings.length + ' warning' + (warnings.length > 1 ? 's' : '') + ')';
+  }
+}
+
+function reportIssue() {
+  var body = 'Plugin version: 1.0.0\n\n';
+  body += '## Warnings/Errors\n';
+  if (warnings.length === 0) {
+    body += 'No warnings logged.\n';
+  } else {
+    warnings.forEach(function(w) { body += '- ' + w + '\n'; });
+  }
+  body += '\n## Steps to reproduce\n1. \n2. \n3. \n\n## Expected vs actual\n\n';
+  var url = 'https://github.com/vasken-loganhollowell/pen-to-figma-importer/issues/new?title=Bug+report&body=' + encodeURIComponent(body);
+  window.open(url, '_blank');
 }
 
 window.onmessage = (e) => {
