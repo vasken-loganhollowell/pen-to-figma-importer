@@ -1,2 +1,6 @@
 node_modules/
 portfolio-export.json
+.DS_Store
+code.js
+code.ts
+eslint.config.js
