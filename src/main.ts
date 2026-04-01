@@ -348,7 +348,13 @@ function applyEffects(node: BlendMixin, effects: any) {
     }
   }
 
-  if (out.length) node.effects = out
+  if (out.length) {
+    try {
+      node.effects = out
+    } catch (_eEff) {
+      sendLog('Effects error: ' + (_eEff as any).message, 'warn')
+    }
+  }
 }
 
 // ─── Auto-Layout ────────────────────────────────────────────
@@ -1127,6 +1133,29 @@ function scanDocument(data: any) {
   const doc = Array.isArray(data) ? { children: data } : data
   const children: any[] = doc.children || []
 
+  // Deep scan: find ALL reusable nodes anywhere in the tree
+  const allReusableIds = new Set<string>()
+  const allRefIds = new Set<string>()
+  function deepScan(node: any) {
+    if (node.reusable === true && node.id) allReusableIds.add(node.id)
+    if (node.type === 'ref' && node.ref) allRefIds.add(node.ref)
+    if (node.children && Array.isArray(node.children)) {
+      for (const child of node.children) deepScan(child)
+    }
+    if (node.descendants) {
+      for (const d of Object.values(node.descendants) as any[]) {
+        if (d.type === 'ref' && d.ref) allRefIds.add(d.ref)
+      }
+    }
+  }
+  for (const child of children) deepScan(child)
+
+  // Find missing refs
+  const missingRefs: string[] = []
+  allRefIds.forEach(function(refId) {
+    if (!allReusableIds.has(refId)) missingRefs.push(refId)
+  })
+
   const components = children.filter((n: any) => n.reusable === true)
   const screens = children.filter((n: any) => n.reusable !== true)
 
@@ -1148,6 +1177,8 @@ function scanDocument(data: any) {
     existingPages: existingPages,
     currentPageId: figma.currentPage.id,
     currentPageName: figma.currentPage.name,
+    missingRefs: missingRefs,
+    totalRefs: allRefIds.size,
   })
 }
 
@@ -1189,8 +1220,21 @@ async function importDocument(data: any, pageMap?: Record<string, string>) {
   // 2. Preload fonts
   await preloadFonts(children)
 
-  // 3. Separate components and screens
-  const components = children.filter((n: any) => n.reusable === true)
+  // 3. Deep collect ALL reusable nodes from the entire tree, plus top-level screens
+  const components: any[] = []
+  const componentIds = new Set<string>()
+  function collectComponents(nodes: any[]) {
+    for (const n of nodes) {
+      if (n.reusable === true && n.id && !componentIds.has(n.id)) {
+        components.push(n)
+        componentIds.add(n.id)
+      }
+      if (n.children && Array.isArray(n.children)) {
+        collectComponents(n.children)
+      }
+    }
+  }
+  collectComponents(children)
   const screens = children.filter((n: any) => n.reusable !== true)
 
   // 4. Create or find the Components page
@@ -1281,12 +1325,25 @@ async function importDocument(data: any, pageMap?: Record<string, string>) {
 
   // 8. Zoom to fit on the first screen page
   sendProgress(96, 'Finishing up...')
-  const landingPage = figma.root.children.find((p: PageNode) =>
-    p.id !== componentsPage.id && p.children.length > 0
-  ) || figma.currentPage
-  await figma.setCurrentPageAsync(landingPage)
-  if (landingPage.children.length > 0) {
-    figma.viewport.scrollAndZoomIntoView(landingPage.children)
+  try {
+    // Find a page with content (not the components page)
+    let landingPage = figma.currentPage
+    for (var pi2 = 0; pi2 < figma.root.children.length; pi2++) {
+      var pg = figma.root.children[pi2]
+      if (pg.id !== componentsPage.id) {
+        try {
+          await pg.loadAsync()
+          if (pg.children.length > 0) { landingPage = pg; break }
+        } catch (_ePg) { /* skip unloadable pages */ }
+      }
+    }
+    await figma.setCurrentPageAsync(landingPage)
+    if (landingPage.children.length > 0) {
+      figma.viewport.scrollAndZoomIntoView(landingPage.children)
+    }
+  } catch (_eZoom) {
+    // Non-critical — just zoom to current page
+    try { figma.viewport.scrollAndZoomIntoView(figma.currentPage.children) } catch (_e9) { /* ignore */ }
   }
 
   sendProgress(100, 'Done!')

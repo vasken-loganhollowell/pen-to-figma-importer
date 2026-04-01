@@ -416,6 +416,18 @@ function buildMapper(result) {
   var list = document.getElementById('mapperList');
   list.innerHTML = '';
 
+  // Show missing refs warning if any
+  if (result.missingRefs && result.missingRefs.length > 0) {
+    var warnDiv = document.createElement('div');
+    warnDiv.style.cssText = 'background:#2a1f00;border:1px solid #f5a623;border-radius:6px;padding:10px;margin-bottom:10px;font-size:11px;color:#f5a623;';
+    var uniqueMissing = [];
+    result.missingRefs.forEach(function(id) { if (uniqueMissing.indexOf(id) === -1) uniqueMissing.push(id); });
+    warnDiv.innerHTML = '<strong style="display:block;margin-bottom:4px">Missing ' + uniqueMissing.length + ' component definitions</strong>' +
+      '<span style="color:#ccc;font-size:10px">Your JSON references ' + result.totalRefs + ' components but ' + uniqueMissing.length +
+      ' are not included as reusable nodes. These will be skipped during import. Re-export with all components included to fix this.</span>';
+    list.appendChild(warnDiv);
+  }
+
   // Build page options
   var pageOptions = '<option value="__current__">Current Page</option>';
   result.existingPages.forEach(function(p) {

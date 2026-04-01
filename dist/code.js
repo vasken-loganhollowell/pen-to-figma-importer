@@ -378,8 +378,13 @@
             });
           }
         }
-        if (out.length)
-          node.effects = out;
+        if (out.length) {
+          try {
+            node.effects = out;
+          } catch (_eEff) {
+            sendLog("Effects error: " + _eEff.message, "warn");
+          }
+        }
       }
       function hasLayout(pen) {
         if (pen.type === "frame" || pen.type === "group") {
@@ -1093,6 +1098,31 @@
       function scanDocument(data) {
         const doc = Array.isArray(data) ? { children: data } : data;
         const children = doc.children || [];
+        const allReusableIds = /* @__PURE__ */ new Set();
+        const allRefIds = /* @__PURE__ */ new Set();
+        function deepScan(node) {
+          if (node.reusable === true && node.id)
+            allReusableIds.add(node.id);
+          if (node.type === "ref" && node.ref)
+            allRefIds.add(node.ref);
+          if (node.children && Array.isArray(node.children)) {
+            for (const child of node.children)
+              deepScan(child);
+          }
+          if (node.descendants) {
+            for (const d of Object.values(node.descendants)) {
+              if (d.type === "ref" && d.ref)
+                allRefIds.add(d.ref);
+            }
+          }
+        }
+        for (const child of children)
+          deepScan(child);
+        const missingRefs = [];
+        allRefIds.forEach(function(refId) {
+          if (!allReusableIds.has(refId))
+            missingRefs.push(refId);
+        });
         const components = children.filter((n) => n.reusable === true);
         const screens = children.filter((n) => n.reusable !== true);
         const screenList = screens.map((n) => ({
@@ -1110,7 +1140,9 @@
           componentCount: components.length,
           existingPages,
           currentPageId: figma.currentPage.id,
-          currentPageName: figma.currentPage.name
+          currentPageName: figma.currentPage.name,
+          missingRefs,
+          totalRefs: allRefIds.size
         });
       }
       function importDocument(data, pageMap) {
@@ -1136,7 +1168,20 @@
           }
           sendProgress(15, "Loading fonts...");
           yield preloadFonts(children);
-          const components = children.filter((n) => n.reusable === true);
+          const components = [];
+          const componentIds = /* @__PURE__ */ new Set();
+          function collectComponents(nodes) {
+            for (const n of nodes) {
+              if (n.reusable === true && n.id && !componentIds.has(n.id)) {
+                components.push(n);
+                componentIds.add(n.id);
+              }
+              if (n.children && Array.isArray(n.children)) {
+                collectComponents(n.children);
+              }
+            }
+          }
+          collectComponents(children);
           const screens = children.filter((n) => n.reusable !== true);
           sendProgress(22, "Preparing Components page...");
           let componentsPage;
@@ -1218,12 +1263,30 @@
           }
           sendLog("Created " + screens.length + " screens across " + pageNames.length + " page(s)", "ok");
           sendProgress(96, "Finishing up...");
-          const landingPage = figma.root.children.find(
-            (p) => p.id !== componentsPage.id && p.children.length > 0
-          ) || figma.currentPage;
-          yield figma.setCurrentPageAsync(landingPage);
-          if (landingPage.children.length > 0) {
-            figma.viewport.scrollAndZoomIntoView(landingPage.children);
+          try {
+            let landingPage = figma.currentPage;
+            for (var pi2 = 0; pi2 < figma.root.children.length; pi2++) {
+              var pg = figma.root.children[pi2];
+              if (pg.id !== componentsPage.id) {
+                try {
+                  yield pg.loadAsync();
+                  if (pg.children.length > 0) {
+                    landingPage = pg;
+                    break;
+                  }
+                } catch (_ePg) {
+                }
+              }
+            }
+            yield figma.setCurrentPageAsync(landingPage);
+            if (landingPage.children.length > 0) {
+              figma.viewport.scrollAndZoomIntoView(landingPage.children);
+            }
+          } catch (_eZoom) {
+            try {
+              figma.viewport.scrollAndZoomIntoView(figma.currentPage.children);
+            } catch (_e9) {
+            }
           }
           sendProgress(100, "Done!");
           figma.ui.postMessage({
