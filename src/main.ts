@@ -422,12 +422,12 @@ function applySizing(node: SceneNode, pen: any, parentLayout: boolean) {
         const fn = node as FrameNode
         if (s.mode === 'FILL' && parentLayout) fn.layoutSizingHorizontal = 'FILL'
         else if (s.mode === 'HUG') fn.layoutSizingHorizontal = 'HUG'
-        else if (s.mode === 'FIXED' && s.fallback) {
+        else if (s.mode === 'FIXED' && s.fallback && s.fallback > 0) {
           fn.layoutSizingHorizontal = 'FIXED'
-          fn.resize(s.fallback, fn.height)
+          fn.resize(s.fallback, Math.max(fn.height, 1))
         }
-      } else if (s.mode === 'FIXED' && s.fallback && 'resize' in node) {
-        (node as any).resize(s.fallback, (node as any).height)
+      } else if (s.mode === 'FIXED' && s.fallback && s.fallback > 0 && 'resize' in node) {
+        (node as any).resize(s.fallback, Math.max((node as any).height || 1, 1))
       }
     }
 
@@ -437,12 +437,12 @@ function applySizing(node: SceneNode, pen: any, parentLayout: boolean) {
         const fn = node as FrameNode
         if (s.mode === 'FILL' && parentLayout) fn.layoutSizingVertical = 'FILL'
         else if (s.mode === 'HUG') fn.layoutSizingVertical = 'HUG'
-        else if (s.mode === 'FIXED' && s.fallback) {
+        else if (s.mode === 'FIXED' && s.fallback && s.fallback > 0) {
           fn.layoutSizingVertical = 'FIXED'
-          fn.resize(fn.width, s.fallback)
+          fn.resize(Math.max(fn.width, 1), s.fallback)
         }
-      } else if (s.mode === 'FIXED' && s.fallback && 'resize' in node) {
-        (node as any).resize((node as any).width, s.fallback)
+      } else if (s.mode === 'FIXED' && s.fallback && s.fallback > 0 && 'resize' in node) {
+        (node as any).resize(Math.max((node as any).width || 1, 1), s.fallback)
       }
     }
 
@@ -734,9 +734,57 @@ function applyPropertyOverride(node: SceneNode, key: string, val: any) {
 async function applyDescendantOverrides(node: SceneNode, overrides: any) {
   if (!overrides || typeof overrides !== 'object') return
 
-  // If override has 'type', it's a full replacement — skip for now (complex)
+  // If override has 'type', it's a full subtree replacement
   if (overrides.type) {
-    sendLog(`Full subtree replacement not yet supported (type: ${overrides.type})`, 'warn')
+    // For ref overrides, swap the component on the target node
+    if (overrides.type === 'ref' && overrides.ref) {
+      const comp = componentMap.get(overrides.ref)
+      if (comp) {
+        try {
+          // If the node is already an instance, use swapComponent
+          if (node.type === 'INSTANCE') {
+            (node as InstanceNode).swapComponent(comp)
+            stats.instances++
+            if (overrides.name) node.name = overrides.name
+            // Apply descendant overrides on the swapped instance
+            if (overrides.descendants) {
+              for (const [dp, dov] of Object.entries(overrides.descendants)) {
+                const dt = findDescendant(node, dp)
+                if (dt) await applyDescendantOverrides(dt, dov as any)
+              }
+            }
+          } else {
+            // Target is not an instance (e.g. a frame/slot) — try insert if parent allows it
+            const parent = node.parent
+            if (parent && parent.type !== 'INSTANCE' && 'insertChild' in parent) {
+              const inst = comp.createInstance()
+              stats.instances++
+              inst.name = overrides.name || node.name
+              if (overrides.id) inst.setPluginData('penId', overrides.id)
+              const idx = Array.prototype.indexOf.call((parent as FrameNode).children, node)
+              ;(parent as FrameNode).insertChild(idx, inst)
+              node.remove()
+              if (overrides.descendants) {
+                for (const [dp, dov] of Object.entries(overrides.descendants)) {
+                  const dt = findDescendant(inst, dp)
+                  if (dt) await applyDescendantOverrides(dt, dov as any)
+                }
+              }
+            } else {
+              // Inside an instance — can't insert, just log
+              sendLog(`Can't replace non-instance node inside instance (ref: ${overrides.ref})`, 'warn')
+            }
+          }
+        } catch (_e6) {
+          sendLog(`Replacement failed for ref ${overrides.ref}: ${(_e6 as any).message}`, 'warn')
+        }
+      } else {
+        sendLog(`Missing component for replacement ref: ${overrides.ref}`, 'warn')
+      }
+    } else {
+      // Other replacement types (frame, text, etc.) — log and skip
+      sendLog(`Subtree replacement type "${overrides.type}" not yet supported`, 'warn')
+    }
     return
   }
 
@@ -1030,6 +1078,21 @@ async function buildNode(pen: any, parent: BaseNode & ChildrenMixin, parentLayou
       break
     }
 
+    case 'note':
+    case 'prompt':
+    case 'context': {
+      // These are annotation/AI node types — import as styled text
+      node = await createText({
+        ...pen,
+        type: 'text',
+        content: pen.content || ('[' + pen.type + ']'),
+        fontFamily: pen.fontFamily || 'Space Mono',
+        fontSize: pen.fontSize || 12,
+        fill: pen.fill || '#7a8499',
+      })
+      break
+    }
+
     default: {
       sendLog(`Unknown type: ${pen.type}`, 'warn')
       return null
@@ -1045,12 +1108,14 @@ async function buildNode(pen: any, parent: BaseNode & ChildrenMixin, parentLayou
   } else {
     if (pen.x !== undefined && 'x' in node) node.x = pen.x
     if (pen.y !== undefined && 'y' in node) node.y = pen.y
-    // Explicit size for non-layout children
+    // Explicit size for non-layout children — guard against zero
     const w = typeof pen.width === 'number' ? pen.width : null
     const h = typeof pen.height === 'number' ? pen.height : null
-    if (w !== null && h !== null && 'resize' in node) (node as any).resize(w, h)
-    else if (w !== null && 'resize' in node) (node as any).resize(w, (node as any).height || 100)
-    else if (h !== null && 'resize' in node) (node as any).resize((node as any).width || 100, h)
+    const safeW = (w !== null && w > 0) ? w : null
+    const safeH = (h !== null && h > 0) ? h : null
+    if (safeW !== null && safeH !== null && 'resize' in node) (node as any).resize(safeW, safeH)
+    else if (safeW !== null && 'resize' in node) (node as any).resize(safeW, (node as any).height || 100)
+    else if (safeH !== null && 'resize' in node) (node as any).resize((node as any).width || 100, safeH)
   }
 
   return node
