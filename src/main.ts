@@ -1156,7 +1156,6 @@ function scanDocument(data: any) {
     if (!allReusableIds.has(refId)) missingRefs.push(refId)
   })
 
-  const components = children.filter((n: any) => n.reusable === true)
   const screens = children.filter((n: any) => n.reusable !== true)
 
   const screenList = screens.map((n: any) => ({
@@ -1173,7 +1172,7 @@ function scanDocument(data: any) {
   figma.ui.postMessage({
     type: 'scan-result',
     screens: screenList,
-    componentCount: components.length,
+    componentCount: allReusableIds.size,
     existingPages: existingPages,
     currentPageId: figma.currentPage.id,
     currentPageName: figma.currentPage.name,

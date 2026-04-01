@@ -1123,7 +1123,6 @@
           if (!allReusableIds.has(refId))
             missingRefs.push(refId);
         });
-        const components = children.filter((n) => n.reusable === true);
         const screens = children.filter((n) => n.reusable !== true);
         const screenList = screens.map((n) => ({
           id: n.id || "",
@@ -1137,7 +1136,7 @@
         figma.ui.postMessage({
           type: "scan-result",
           screens: screenList,
-          componentCount: components.length,
+          componentCount: allReusableIds.size,
           existingPages,
           currentPageId: figma.currentPage.id,
           currentPageName: figma.currentPage.name,
