@@ -252,11 +252,30 @@
   </div>
 </div>
 
-<!-- Step 3: Page Mapper -->
+<!-- Step 3: Choose import mode -->
+<div class="step-view" id="stepChoice">
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center">
+    <div style="font-size:13px;color:#fff;font-weight:600" id="choiceSummary">Found 6 screens and 13 components</div>
+    <div style="font-size:11px;color:#888;margin-bottom:8px">How would you like to import?</div>
+
+    <button class="import-btn" onclick="quickImport()" style="width:100%;max-width:320px">
+      Import everything to this page
+    </button>
+    <div style="font-size:10px;color:#666;margin-top:-8px">All screens and components land on the current page</div>
+
+    <button class="import-btn" onclick="showMapper()" style="width:100%;max-width:320px;background:transparent;border:1px solid #444;color:#ccc">
+      Organize into separate pages
+    </button>
+    <div style="font-size:10px;color:#666;margin-top:-8px">Choose which Figma page each screen goes to</div>
+  </div>
+  <div id="choiceWarning"></div>
+</div>
+
+<!-- Step 4: Page Organizer -->
 <div class="step-view" id="stepMapper">
   <div class="mapper-header">
-    <h3>Assign screens to pages</h3>
-    <p>Choose which Figma page each screen should land on</p>
+    <h3>Organize your screens</h3>
+    <p>Pick which Figma page each screen should go to</p>
   </div>
   <div class="mapper-list" id="mapperList"></div>
   <button class="import-btn" id="importBtn" onclick="startImport()">Import Design</button>
@@ -273,7 +292,7 @@
 
 <!-- Footer -->
 <div class="footer">
-  <span>v1.1.0 &middot; <a href="https://github.com/cloverxlimited/pen-to-figma-importer" target="_blank">GitHub</a></span>
+  <span>v1.1.0 &middot; <a href="https://cloverxlimited.github.io/pen-to-figma/" target="_blank">How to use</a> &middot; <a href="https://github.com/cloverxlimited/pen-to-figma-importer" target="_blank">GitHub</a></span>
   <button class="report-btn" id="reportBtn" onclick="openModal()">Feedback</button>
 </div>
 
@@ -408,9 +427,48 @@ function updateScanMessage() {
   document.getElementById('scanDetail').textContent = msg[1];
 }
 
-// ─── Page Mapper ───
-function buildMapper(result) {
+// ─── Choice Step ───
+function showChoice(result) {
   if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+  scanResult = result;
+
+  // Update summary text
+  document.getElementById('choiceSummary').textContent =
+    'Found ' + result.screens.length + ' screen' + (result.screens.length !== 1 ? 's' : '') +
+    ' and ' + result.componentCount + ' component' + (result.componentCount !== 1 ? 's' : '');
+
+  // Show missing refs warning in choice view too
+  var warnEl = document.getElementById('choiceWarning');
+  warnEl.innerHTML = '';
+  if (result.missingRefs && result.missingRefs.length > 0) {
+    var uniqueMissing = [];
+    result.missingRefs.forEach(function(id) { if (uniqueMissing.indexOf(id) === -1) uniqueMissing.push(id); });
+    warnEl.innerHTML = '<div style="background:#2a1f00;border:1px solid #f5a623;border-radius:6px;padding:10px;margin-top:12px;font-size:10px;color:#f5a623">' +
+      '<strong>Note:</strong> ' + uniqueMissing.length + ' component' + (uniqueMissing.length !== 1 ? 's are' : ' is') +
+      ' referenced but not included in this file. Those elements will be skipped. ' +
+      '<a href="https://cloverxlimited.github.io/pen-to-figma/#export" target="_blank" style="color:#f5a623;text-decoration:underline">Learn how to export</a></div>';
+  }
+
+  showStep('stepChoice');
+}
+
+function quickImport() {
+  // Set all screens to current page, components to current page too
+  pageAssignments = {};
+  if (scanResult) {
+    scanResult.screens.forEach(function(s) { pageAssignments[s.id] = '__current__'; });
+    pageAssignments['__components__'] = '__current__';
+  }
+  startImport();
+}
+
+function showMapper() {
+  buildMapper(scanResult);
+  showStep('stepMapper');
+}
+
+// ─── Page Organizer ───
+function buildMapper(result) {
   scanResult = result;
 
   var list = document.getElementById('mapperList');
@@ -660,7 +718,7 @@ window.onmessage = function(e) {
   if (!msg) return;
 
   if (msg.type === 'scan-result') {
-    buildMapper(msg);
+    showChoice(msg);
   }
   if (msg.type === 'progress') {
     document.getElementById('progressFill').style.width = msg.percent + '%';
