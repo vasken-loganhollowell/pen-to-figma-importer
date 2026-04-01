@@ -72,6 +72,8 @@ async function handleRequest(request, env) {
   var email = (body.email || '').trim();
   var pluginVersion = body.plugin_version || 'unknown';
   var warnings = (body.warnings || '').trim();
+  var importLog = (body.import_log || '').trim();
+  var importStats = (body.import_stats || '').trim();
 
   if (!summary) {
     return jsonResponse({ error: 'Summary is required' }, 400);
@@ -85,8 +87,16 @@ async function handleRequest(request, env) {
     issueBody += '### Details\n' + details + '\n\n';
   }
 
+  if (importStats && importStats !== '(none)') {
+    issueBody += '### Import Result\n`' + importStats + '`\n\n';
+  }
+
   if (warnings && warnings !== '(none)') {
-    issueBody += '### Plugin Warnings\n```\n' + warnings + '\n```\n\n';
+    issueBody += '### Warnings/Errors\n```\n' + warnings + '\n```\n\n';
+  }
+
+  if (importLog && importLog !== '(no import run)') {
+    issueBody += '### Full Import Log\n<details><summary>Click to expand</summary>\n\n```\n' + importLog + '\n```\n</details>\n\n';
   }
 
   issueBody += '---\n';

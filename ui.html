@@ -321,9 +321,9 @@
         <label>Your email <span style="color:#555">(optional, for follow-up)</span></label>
         <input type="email" id="fbEmail" placeholder="you@example.com">
       </div>
-      <div id="warningsSection" style="display:none">
-        <label style="font-size:11px;color:#888;margin-bottom:5px;display:block;font-weight:600">Plugin warnings (auto-attached)</label>
-        <div class="form-warnings" id="fbWarnings"></div>
+      <div id="importLogSection" style="display:none">
+        <label style="font-size:11px;color:#888;margin-bottom:5px;display:block;font-weight:600">Import log (auto-attached)</label>
+        <div class="form-warnings" id="fbImportLog" style="max-height:80px;color:#aaa"></div>
       </div>
       <button type="submit" class="submit-btn" id="submitBtn">Send Feedback</button>
       <div class="form-status" id="formStatus"></div>
@@ -339,6 +339,8 @@ var PLUGIN_VERSION = 'v1.1.0';
 
 // ─── State ───
 var warnings = [];
+var importLog = []; // full log: successes + warnings + errors
+var importStats = null; // stats from completed import
 var selectedType = 'bug';
 var pendingData = null;
 var scanResult = null;
@@ -355,6 +357,8 @@ function resetPlugin() {
   scanResult = null;
   pageAssignments = {};
   warnings = [];
+  importLog = [];
+  importStats = null;
   document.getElementById('log').innerHTML = '';
   document.getElementById('stats').className = 'stats';
   document.getElementById('stats').innerHTML = '';
@@ -629,6 +633,9 @@ function log(msg, cls) {
   var logEl = document.getElementById('log');
   logEl.appendChild(line);
   logEl.scrollTop = logEl.scrollHeight;
+  // Track in full log
+  var prefix = cls === 'ok' ? '[OK] ' : cls === 'warn' ? '[WARN] ' : cls === 'err' ? '[ERROR] ' : '';
+  importLog.push(prefix + msg);
   if (cls === 'warn' || cls === 'err') {
     warnings.push(msg);
     var btn = document.getElementById('reportBtn');
@@ -644,10 +651,21 @@ function openModal() {
   document.getElementById('submitBtn').disabled = false;
   document.getElementById('submitBtn').className = 'submit-btn';
   document.getElementById('submitBtn').textContent = 'Send Feedback';
-  var ws = document.getElementById('warningsSection');
-  var wc = document.getElementById('fbWarnings');
-  if (warnings.length > 0) { ws.style.display = 'block'; wc.textContent = warnings.join('\n'); }
-  else { ws.style.display = 'none'; }
+  var logSection = document.getElementById('importLogSection');
+  var logContent = document.getElementById('fbImportLog');
+  if (importLog.length > 0) {
+    logSection.style.display = 'block';
+    var logText = '';
+    if (importStats) {
+      logText += '--- Import Result ---\n';
+      Object.keys(importStats).forEach(function(k) { logText += k + ': ' + importStats[k] + '\n'; });
+      logText += '\n';
+    }
+    logText += '--- Log ---\n' + importLog.join('\n');
+    logContent.textContent = logText;
+  } else {
+    logSection.style.display = 'none';
+  }
 }
 function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
 document.getElementById('modalOverlay').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
@@ -673,7 +691,9 @@ function submitFeedback(e) {
     type: selectedType, summary: summary,
     details: details || '(none)', email: email || '(not provided)',
     plugin_version: PLUGIN_VERSION,
-    warnings: warnings.length > 0 ? warnings.join('\n') : '(none)'
+    warnings: warnings.length > 0 ? warnings.join('\n') : '(none)',
+    import_log: importLog.length > 0 ? importLog.join('\n') : '(no import run)',
+    import_stats: importStats ? Object.keys(importStats).map(function(k) { return k + ': ' + importStats[k]; }).join(', ') : '(none)'
   };
 
   if (WORKER_URL === '__YOUR_WORKER_URL__') {
@@ -731,6 +751,7 @@ window.onmessage = function(e) {
     document.getElementById('progressFill').style.width = '100%';
     document.getElementById('progressText').textContent = 'Import complete!';
     if (msg.stats) {
+      importStats = msg.stats;
       var statsEl = document.getElementById('stats');
       statsEl.classList.add('active');
       statsEl.innerHTML = Object.entries(msg.stats)
