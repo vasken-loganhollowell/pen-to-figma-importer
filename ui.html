@@ -224,19 +224,93 @@
   .type-tab.active { border-color: #0ACF83; color: #0ACF83; background: rgba(10,207,131,0.05); }
   .type-tab.active[data-type="bug"] { border-color: #ff5c5c; color: #ff5c5c; background: rgba(255,92,92,0.05); }
   .type-tab.active[data-type="feature"] { border-color: #4d9fff; color: #4d9fff; background: rgba(77,159,255,0.05); }
+  /* ─── Header animation ─── */
+  .header { transition: all 0.4s ease; overflow: hidden; }
+  .header.collapsed { max-height: 0; opacity: 0; margin: 0; padding: 0; }
+  .header h2 { font-size: 14px; color: #fff; margin-bottom: 4px; }
+  .header .subtitle { font-size: 11px; color: #888; margin-bottom: 0; }
+
+  /* ─── Getting started tips ─── */
+  .tips {
+    display: flex; flex-direction: column; gap: 8px;
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid #333;
+  }
+  .tip {
+    display: flex; gap: 8px; align-items: flex-start;
+    font-size: 11px; color: #888; line-height: 1.5;
+  }
+  .tip-num {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #252525; border: 1px solid #444;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; color: #0ACF83;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .tip a { color: #0ACF83; text-decoration: underline; }
+
+  /* ─── Step header (shown after drop) ─── */
+  .step-header {
+    display: none; align-items: center; gap: 8px;
+    margin-bottom: 12px; padding-bottom: 10px;
+    border-bottom: 1px solid #333;
+  }
+  .step-header.visible { display: flex; }
+  .step-header-icon {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: linear-gradient(135deg, #06090f, #162240);
+    border: 1px solid #333;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .step-header-icon .badge {
+    font-size: 6px; font-weight: 700; color: #06090f;
+    background: #0ACF83; padding: 1px 3px; border-radius: 2px;
+  }
+  .step-header h2 { font-size: 12px; color: #fff; margin: 0; }
+  .step-header p { font-size: 10px; color: #666; margin: 0; }
 </style>
 </head>
 <body>
 
-<h2>Pen to Figma Importer</h2>
-<p class="subtitle">Import .pen design files as fully editable Figma documents</p>
+<!-- Welcome header (hides after file drop) -->
+<div class="header" id="welcomeHeader">
+  <h2>Pen to Figma Importer</h2>
+  <p class="subtitle">Import .pen design files as fully editable Figma documents</p>
+</div>
 
-<!-- Step 1: Drop -->
+<!-- Compact header (shows after file drop) -->
+<div class="step-header" id="stepHeader">
+  <div class="step-header-icon"><span class="badge">.pen</span></div>
+  <div>
+    <h2>Pen to Figma</h2>
+    <p id="stepHeaderDetail">Importing...</p>
+  </div>
+</div>
+
+<!-- Step 1: Drop + Getting Started -->
 <div class="step-view active" id="stepDrop">
   <div class="drop-zone" id="dropZone">
     <div class="icon">&#128196;</div>
     <div class="label">Drop .json file here or click to browse</div>
-    <div class="hint">Exported from Pencil via batch_get + get_variables</div>
+    <div class="hint">Exported from Pencil using Claude Code</div>
+  </div>
+  <div class="tips">
+    <div class="tip">
+      <span class="tip-num">1</span>
+      <span>Open your .pen file in Pencil and export it to JSON using Claude Code or the MCP tools</span>
+    </div>
+    <div class="tip">
+      <span class="tip-num">2</span>
+      <span>Drop the exported .json file above</span>
+    </div>
+    <div class="tip">
+      <span class="tip-num">3</span>
+      <span>Choose how to organize your screens, then import</span>
+    </div>
+    <div style="font-size:10px;color:#555;margin-top:4px">
+      <a href="https://cloverxlimited.github.io/pen-to-figma/" target="_blank" style="color:#0ACF83;text-decoration:none">View full guide &rarr;</a>
+    </div>
   </div>
 </div>
 <input type="file" id="fileInput" accept=".json,.pen">
@@ -367,6 +441,8 @@ function resetPlugin() {
   document.getElementById('resetBtn').style.display = 'none';
   document.getElementById('reportBtn').textContent = 'Feedback';
   document.getElementById('reportBtn').classList.remove('has-warnings');
+  document.getElementById('welcomeHeader').classList.remove('collapsed');
+  document.getElementById('stepHeader').classList.remove('visible');
   showStep('stepDrop');
 }
 
@@ -411,6 +487,11 @@ var scanIndex = 0;
 var scanTimer = null;
 
 function startScan() {
+  // Collapse welcome header, show compact header
+  document.getElementById('welcomeHeader').classList.add('collapsed');
+  document.getElementById('stepHeader').classList.add('visible');
+  document.getElementById('stepHeaderDetail').textContent = 'Scanning file...';
+
   showStep('stepScan');
   scanIndex = 0;
   updateScanMessage();
@@ -457,7 +538,7 @@ function showChoice(result) {
 }
 
 function quickImport() {
-  // Set all screens to current page, components to current page too
+  document.getElementById('stepHeaderDetail').textContent = 'Importing to current page...';
   pageAssignments = {};
   if (scanResult) {
     scanResult.screens.forEach(function(s) { pageAssignments[s.id] = '__current__'; });
@@ -467,6 +548,7 @@ function quickImport() {
 }
 
 function showMapper() {
+  document.getElementById('stepHeaderDetail').textContent = 'Organize your screens';
   buildMapper(scanResult);
   showStep('stepMapper');
 }
